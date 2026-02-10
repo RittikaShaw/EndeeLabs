@@ -1,15 +1,68 @@
 # RAG App - Document Chat with AI
 
-A full-stack Retrieval-Augmented Generation (RAG) application that lets you upload documents (PDF, DOCX, TXT), process them into vector embeddings, and chat with an AI that answers questions using your documents as context.
+A full-stack **Retrieval-Augmented Generation (RAG)** application demonstrating how **vector search** powers intelligent document Q&A. Upload documents (PDF, DOCX, TXT), automatically convert them to vector embeddings, and chat with an AI that retrieves relevant context using semantic similarity search.
+
+## What is RAG?
+
+**Retrieval-Augmented Generation** combines the power of:
+1. **Vector Search** - Finding semantically similar content using embedding vectors
+2. **Large Language Models** - Generating human-like responses
+
+Instead of relying solely on the LLM's training data, RAG retrieves relevant information from your documents and uses it as context, enabling accurate answers grounded in your actual content.
+
+## How Vector Search Works in This App
+
+### Document Ingestion Pipeline
+
+```
++------------------+      +------------------+      +------------------+
+|   Upload File    | ---> |   Extract Text   | ---> |  Chunk Text      |
+|  (PDF/DOCX/TXT)  |      |  (pdf-parse,     |      |  (~500 tokens,   |
+|                  |      |   mammoth)       |      |   100 overlap)   |
++------------------+      +------------------+      +------------------+
+                                                            |
+                                                            v
++------------------+      +------------------+      +------------------+
+|  Store Metadata  | <--- |  Store Vectors   | <--- | Generate Embed   |
+|  (Supabase)      |      |  (Endee DB)      |      | (Gemini 3072-d)  |
++------------------+      +------------------+      +------------------+
+```
+
+### RAG Query Flow
+
+```
++------------------+      +------------------+      +------------------+
+|  User Question   | ---> | Generate Query   | ---> | Vector Search    |
+|  "What is X?"    |      | Embedding        |      | (Cosine Sim)     |
++------------------+      +------------------+      +------------------+
+                                                            |
+                                                            v
++------------------+      +------------------+      +------------------+
+|  Return Answer   | <--- |  LLM Generate    | <--- | Retrieve Top-K   |
+|  + Sources       |      |  (Gemini Flash)  |      | Matching Chunks  |
++------------------+      +------------------+      +------------------+
+```
+
+## Key Features
+
+- **Semantic Search** - Find relevant content based on meaning, not just keywords
+- **Multi-format Support** - Upload PDF, DOCX, and TXT files
+- **Real-time Processing** - Documents are chunked and embedded automatically
+- **Source Citations** - Every AI response shows which document chunks were used
+- **Similarity Scores** - View how closely each source matched your query
+- **Chat History** - Conversations are preserved with full context
+- **Dark/Light Mode** - Modern UI with theme support
 
 ## Tech Stack
 
-- **Frontend**: React 18 + Vite + TypeScript + Tailwind CSS + ShadCN UI
-- **State Management**: Redux Toolkit + RTK Query
-- **Backend**: Express.js REST API
-- **Database**: Supabase (PostgreSQL + Storage)
-- **Vector DB**: Endee
-- **AI**: Google Gemini (`gemini-embedding-001` for embeddings, `gemini-2.5-flash-lite` for chat)
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, ShadCN UI |
+| **State** | Redux Toolkit + RTK Query |
+| **Backend** | Express.js REST API |
+| **Database** | Supabase (PostgreSQL + File Storage) |
+| **Vector DB** | Endee (cosine similarity search) |
+| **AI/ML** | Google Gemini (`gemini-embedding-001` for embeddings, `gemini-2.5-flash-lite` for chat) |
 
 ## Project Structure
 
@@ -20,7 +73,7 @@ rag-app/
 │   │   ├── layout/             # Layout, AppSidebar
 │   │   └── ui/                 # ShadCN UI components
 │   ├── pages/                  # DocumentsPage, ChatPage
-│   ├── hooks/                  # use-toast, use-mobile
+│   ├── hooks/                  # Custom React hooks
 │   └── lib/                    # Utilities
 ├── server/                     # Express API server
 │   └── src/
@@ -28,17 +81,18 @@ rag-app/
 │   ├── store/                  # Redux store + RTK Query APIs
 │   ├── database/               # Supabase client & types
 │   ├── services/               # Document processing, RAG, embeddings
-│   └── endee/                  # Endee vector DB client
-└── supabase/
-    └── migrations/             # SQL schema migrations
+│   └── endee/                  # Endee vector DB client wrapper
+├── supabase/
+│   └── migrations/             # SQL schema migrations
+└── docker-compose.yml          # Endee container config
 ```
 
 ## Prerequisites
 
 - **Node.js** >= 20
 - **npm** >= 10
+- **Docker** (for running Endee locally)
 - A **Supabase** project (free tier works) - [supabase.com](https://supabase.com)
-- An **Endee** vector database instance running locally or remotely
 - A **Google Gemini API** key - [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
 ## Setup
@@ -46,26 +100,33 @@ rag-app/
 ### 1. Clone and install
 
 ```bash
-git clone <repo-url>
-cd rag-app
+git clone https://github.com/vishal-coder-jpg/rag-chat-agent.git
+cd rag-chat-agent
 npm install
 ```
 
-This installs all dependencies across the monorepo (root, server, and all packages via npm workspaces).
+### 2. Start Endee Vector Database
 
-### 2. Set up Supabase
+```bash
+docker-compose up -d
+```
+
+Verify it's running:
+```bash
+curl http://localhost:8080/api/v1/index/list
+```
+
+### 3. Set up Supabase
 
 1. Create a new project at [supabase.com](https://supabase.com)
-2. Go to the **SQL Editor** in your Supabase dashboard
-3. Run the migration files **in order**:
-   - `supabase/migrations/001_initial_schema.sql` - Creates tables (`documents`, `document_chunks`, `chat_sessions`, `chat_messages`) and indexes
-   - `supabase/migrations/002_disable_rls_and_fix_schema.sql` - Disables RLS, creates the `documents` storage bucket with public access policies
-4. Note your **Project URL**, **Anon Key**, and **Service Role Key** from **Settings > API**
+2. Go to **SQL Editor** and run the migrations in order:
+   - `supabase/migrations/001_initial_schema.sql`
+   - `supabase/migrations/002_disable_rls_and_fix_schema.sql`
+3. Copy your credentials from **Settings > API**
 
-### 3. Set up environment variables
+### 4. Configure environment variables
 
-**Root `.env`** - Copy the example and fill in your values:
-
+**Root `.env`:**
 ```bash
 cp .env.example .env
 ```
@@ -82,116 +143,129 @@ VITE_API_URL=http://localhost:4000
 
 # Endee Vector DB
 ENDEE_API_URL=http://localhost:8080
-ENDEE_AUTH_TOKEN=your-endee-auth-token
+ENDEE_AUTH_TOKEN=
 
 # Google Gemini API
 GEMINI_API_KEY=your-gemini-api-key
 ```
 
-**Server `.env`** - Create `server/.env`:
+**Server `.env`:**
+```bash
+cp server/.env.example server/.env
+```
 
 ```env
-# Supabase
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# Endee Vector DB
 ENDEE_API_URL=http://localhost:8080
-
-# Google Gemini API
 GEMINI_API_KEY=your-gemini-api-key
-
-# Server Port
 PORT=4000
 ```
 
-### 4. Start Endee vector database
-
-Make sure your Endee instance is running on port 8080 (or update `ENDEE_API_URL` in both `.env` files).
-
 ### 5. Run the application
-
-Start both frontend and backend together:
 
 ```bash
 npm run dev:all
 ```
 
-Or start them separately in two terminals:
-
-```bash
-# Terminal 1 - Frontend (http://localhost:3000)
-npm run dev
-
-# Terminal 2 - Backend API (http://localhost:4000)
-npm run dev:server
-```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Usage
 
-### Upload Documents
+### 1. Upload Documents
+- Navigate to **Documents** page
+- Drag & drop or click to upload PDF, DOCX, or TXT files
+- Wait for processing (status changes to "Completed")
 
-1. Navigate to the **Documents** page from the sidebar
-2. Drag & drop or click the upload area to upload PDF, DOCX, or TXT files
-3. Wait for processing to complete (status badge changes to "Completed")
-4. Click any document to see its details and preview
+### 2. Chat with Your Documents
+- Navigate to **Chat** page
+- Click **New Chat**
+- Ask questions about your uploaded documents
+- View source citations with similarity scores
 
-### Chat with Documents
+## Vector Search Implementation
 
-1. Navigate to the **Chat** page from the sidebar
-2. Click **New Chat** to start a session
-3. Ask questions about your uploaded documents
-4. The AI retrieves relevant chunks and generates answers with source citations
-5. Hover over source badges in responses to see the matched content and similarity score
-
-## Architecture
-
-### Document Upload Flow
-
-```
-User uploads file
-  → Stored in Supabase Storage
-  → Document record created (status: pending)
-  → POST /process/:documentId triggers processing:
-      → Extract text (pdf-parse / mammoth / raw text)
-      → Chunk text (~500 tokens, 100 token overlap)
-      → Generate embeddings (Gemini gemini-embedding-001, 3072 dimensions)
-      → Store vectors in Endee
-      → Save chunks to Supabase
-  → Status updated to "completed"
+### Embedding Generation
+```typescript
+// Using Gemini embedding model (3072 dimensions)
+const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' })
+const result = await model.embedContent(text)
+const embedding = result.embedding.values // [0.123, -0.456, ...]
 ```
 
-### Chat Query (RAG) Flow
-
+### Storing in Endee
+```typescript
+await endeeClient.upsertVector('documents', {
+  id: chunkId,
+  values: embedding,        // 3072-dimensional vector
+  metadata: { documentId, chunkIndex }
+})
 ```
-User sends message
-  → Generate query embedding (Gemini)
-  → Vector similarity search in Endee
-  → Fetch matching chunk content from Supabase
-  → Build prompt with context + chat history
-  → Generate response (Gemini 2.5 Flash Lite)
-  → Save message and source references
+
+### Similarity Search
+```typescript
+const results = await endeeClient.search('documents', {
+  vector: queryEmbedding,   // User question as vector
+  topK: 5,                  // Return top 5 matches
+})
+// Returns: [{ id, score: 0.89 }, { id, score: 0.76 }, ...]
 ```
 
 ## API Endpoints
 
-| Method | Endpoint              | Description                            |
-| ------ | --------------------- | -------------------------------------- |
-| GET    | `/health`             | Health check                           |
-| POST   | `/process/:documentId`| Process an uploaded document            |
-| POST   | `/chat`               | Send a chat message (body: `{ sessionId, content }`) |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| POST | `/process/:documentId` | Process document (chunk + embed + store vectors) |
+| POST | `/chat` | RAG query (embed question → search → generate response) |
+
+## Database Schema
+
+### Documents
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| name | TEXT | Display name |
+| file_type | TEXT | pdf, docx, txt |
+| status | TEXT | pending, processing, completed, failed |
+| chunk_count | INT | Number of chunks created |
+
+### Document Chunks
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| document_id | UUID | Foreign key |
+| chunk_index | INT | Order within document |
+| content | TEXT | Chunk text content |
+| embedding_id | TEXT | Reference to vector in Endee |
+
+### Chat Messages
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| session_id | UUID | Chat session reference |
+| role | TEXT | user or assistant |
+| content | TEXT | Message content |
+| sources | JSONB | Array of source citations with scores |
 
 ## Available Scripts
 
-| Script             | Description                              |
-| ------------------ | ---------------------------------------- |
-| `npm run dev`      | Start Vite dev server (port 3000)        |
-| `npm run dev:server`| Start Express server (port 4000)        |
-| `npm run dev:all`  | Start both frontend and backend          |
-| `npm run build`    | Build frontend for production            |
-| `npm run build:server` | Build server for production          |
-| `npm run type-check`| Run TypeScript type checking             |
-| `npm run lint`     | Run ESLint                               |
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start frontend (port 3000) |
+| `npm run dev:server` | Start backend (port 4000) |
+| `npm run dev:all` | Start both frontend and backend |
+| `npm run build` | Build for production |
+| `npm run type-check` | TypeScript type checking |
+| `npm run lint` | Run ESLint |
+
+## Docker Commands
+
+```bash
+docker-compose up -d       # Start Endee
+docker-compose down        # Stop Endee
+docker-compose logs endee  # View logs
+```
 
 ## License
 
